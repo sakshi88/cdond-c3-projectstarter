@@ -9,12 +9,12 @@ commands:
           name: Destroy frontend environments
           when: on_fail
           command: |
-            aws cloudformation delete-stack --udapeople-frontend-${CIRCLE_WORKFLOW_ID:0:7}
+            aws cloudformation delete-stack --stack-name --udapeople-frontend-${CIRCLE_WORKFLOW_ID:0:7}
       - run:
           name: Destroy backend environments
           when: on_fail
           command: |
-            aws cloudformation delete-stack --udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}
+            aws cloudformation delete-stack --stack-name --udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}
             
 jobs:
   build-frontend:
@@ -132,8 +132,6 @@ jobs:
       - image: amazon/aws-cli
     steps:
       - checkout
-      - run: apk add --update tar
-      - run: apk add --update gzip
       - run:
           name: Ensure back-end infrastructure exists
           command: |
