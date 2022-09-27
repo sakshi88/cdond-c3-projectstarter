@@ -209,7 +209,7 @@ jobs:
       - run:
           name: Install dependencies
           command: |
-            yum install -y python3 ansible node npm awscli
+            yum install -y python3 ansible node npm awscli tar gzip
       - run:
           name: Get backend url
           command: |
