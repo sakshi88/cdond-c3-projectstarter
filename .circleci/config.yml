@@ -126,13 +126,13 @@ jobs:
             # npm install oauth-sign@^0.9.0
             npm audit fix --force
             npm audit --audit-level=critical
-            
   deploy-infrastructure:
     docker:
       - image: amazon/aws-cli
     steps:
       - checkout
-      - run: yum -y install tar gzip
+      - run: apk add --update tar
+      - run: apk add --update gzip
       - run:
           name: Ensure back-end infrastructure exists
           command: |
@@ -150,13 +150,13 @@ jobs:
       - run:
           name: Add back-end ip to ansible inventory
           command: |
-           aws ec2 describe-instances --query 'Reservations[*].Instances[*].PublicIpAddress' --output text >> inventory.txt
+           aws ec2 describe-instances -query 'Reservations[*].Instances[*].PublicIpAddress' --output text >> inventory.txt
       - persist_to_workspace:
           root: ~/
           paths:
             - project/.circleci/ansible/inventory.txt
-      - destroy-environment  
-  
+      - destroy-environment      
+
   configure-infrastructure:
     docker:
       - image: python:3.11-rc-alpine
@@ -169,14 +169,14 @@ jobs:
       - run:
           name: Install dependencies
           command: |
-            apk add --update tar gzip ansible
+            apk add --update tar gzip ansible awscli
       - run:
           name: Configure server
           command: |
             cd .circleci/ansible
             ansible-playbook -i inventory.txt configure-server.yml
-      # Here's where you will add some code to rollback on failure
-  
+      # Here's where you will add some code to rollback on failure      
+
   run-migrations:
     docker:
       - image: circleci/node:13.8.0
@@ -189,6 +189,7 @@ jobs:
           command: |
             cd backend
             npm install
+            npm audit fix
             npm run migrations > migrations_dump.txt
       - run:
           name: Send migration results to kvdb
@@ -197,7 +198,7 @@ jobs:
             then
             curl https://kvdb.io/Sj1ZGcheHT6dsgnb9VhaLX/migration_${CIRCLE_WORKFLOW_ID:0:7}  -d '1'
             fi
-      - destroy-environment      
+      # Here's where you will add some code to rollback on failure      
 
   deploy-frontend:
     docker:
@@ -207,9 +208,33 @@ jobs:
       - attach_workspace:
           at: ~/
       - run:
-          name: Install dependencies
+          name: Install tar
           command: |
-            yum install -y python3 ansible node npm awscli tar gzip
+            yum install -y tar
+      - run:
+          name: Install gzip
+          command: |
+            yum install -y gzip
+      - run:
+          name: Install python3
+          command: |
+            yum install -y python3
+      - run:
+          name: Install ansible
+          command: | 
+            yum install -y ansible
+      - run:
+          name: Install node
+          command: | 
+            yum install -y node
+      - run:
+          name: Install npm
+          command: | 
+            yum install -y npm
+      - run:
+          name: Install awscli
+          command: | 
+            yum install -y awscli
       - run:
           name: Get backend url
           command: |
@@ -244,9 +269,14 @@ workflows:
           requires: [build-frontend]
       - scan-backend: 
           requires: [build-backend]
-      - deploy-infrastructure
-      - configure-infrastructure
-      - run-migrations
-      - deploy-frontend: 
+      - deploy-infrastructure:
+          requires: [test-frontend, test-backend, scan-frontend]
+          filters:
+            branches:
+              only: [test-feature-branch]
+      - configure-infrastructure:
+          requires: [deploy-infrastructure]
+      - run-migrations:
           requires: [configure-infrastructure]
-      
+      - deploy-frontend:
+          requires: [run-migrations]
