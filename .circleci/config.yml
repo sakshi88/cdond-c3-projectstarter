@@ -324,12 +324,14 @@ jobs:
       - run:
           name: Install dependencies
           command: |
-            yum install -y nodejs
-            yum install -y npm
-            yum install -y curl
-            yum install -y awscli
-            yum install -y tar
-            yum install -y gzip
+            apk add --update nodejs
+            apk add --update npm
+            apk add --update unzip 
+            apk add --update gzip 
+            apk add --update tar
+            apk add --update curl
+            apk add --update ansible
+            pip install awscli
       - run:
           name: Backend smoke test.
           command: |
