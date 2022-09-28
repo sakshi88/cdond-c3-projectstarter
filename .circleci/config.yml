@@ -160,6 +160,7 @@ jobs:
           command: |
             aws cloudformation deploy \
               --template-file .circleci/files/backend.yml \
+              --tags project=udapeople \
               --stack-name "udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}" \
               --parameter-overrides ID="${CIRCLE_WORKFLOW_ID:0:7}"  
       - run:
@@ -167,12 +168,13 @@ jobs:
           command: |
             aws cloudformation deploy \
               --template-file .circleci/files/frontend.yml \
+              --tags project=udapeople \
               --stack-name "udapeople-frontend-${CIRCLE_WORKFLOW_ID:0:7}" \
               --parameter-overrides ID="${CIRCLE_WORKFLOW_ID:0:7}"
       - run:
           name: Add back-end ip to ansible inventory
           command: |
-           aws ec2 describe-instances --query 'Reservations[*].Instances[*].PublicIpAddress' --output text >> inventory.txt
+           aws ec2 describe-instances --filters "Name=tag:Name,Values=backend-${CIRCLE_WORKFLOW_ID:0:7}" --query 'Reservations[*].Instances[*].PublicIpAddress' --output text >> inventory.txt
       - persist_to_workspace:
           root: ~/
           paths:
@@ -321,12 +323,12 @@ jobs:
             echo "Contents  of the inventory.txt file is -------"
             cat inventory.txt
             ansible-playbook -i inventory.txt deploy-backend.yml
-      - destroy-environment:
-          stack-name: udapeople-frontend-${CIRCLE_WORKFLOW_ID:0:7}
-      - destroy-environment:
-          stack-name: udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7} 
-      - revert-migrations:
-          workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}    
+      #- destroy-environment:
+          #stack-name: udapeople-frontend-${CIRCLE_WORKFLOW_ID:0:7}
+      #- destroy-environment:
+          #stack-name: udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7} 
+      #- revert-migrations:
+          #workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}    
 
   smoke-test:
     docker:
@@ -388,7 +390,7 @@ jobs:
       - run:
           name: Get previous stack workflow id
           command: |
-            export oldWorkFlowId=$(aws cloudformation list-exports --query "Exports[?Name==\`WorkflowID\`].Value" --no-paginate --output text)
+            export oldWorkFlowId=$(aws cloudformation list-exports --filters "Name=tag:Name,Values=backend-${CIRCLE_WORKFLOW_ID:0:7}" --query "Exports[?Name==\`WorkflowID\`].Value" --no-paginate --output text)
             oldWorkFlowId=${oldWorkFlowId#udapeople-}
             echo oldWorkFlowId: "${oldWorkFlowId}"
             echo "${oldWorkFlowId}" > oldWorkFlowId.txt
@@ -414,6 +416,34 @@ jobs:
       - revert-migrations:
           workflow_id: ${CIRCLE_WORKFLOW_ID:0:7} 
 
+  cleanup:
+    docker:
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run:
+          name: Install tar utility
+          command: |
+            yum install -y tar gzip
+      - attach_workspace:
+          at: ~/
+      - run:
+          name: Get old stack workflow id and Remove old stacks and files
+          command: |
+            oldWorkFlowId=$(<OldWorkflowID.txt)
+            echo OldWorkflowID: "${oldWorkFlowId}"
+            echo currentID "${CIRCLE_WORKFLOW_ID:0:7}"
+            STACKS=($(aws cloudformation list-stacks --query "StackSummaries[*].StackName" \
+            --stack-status-filter CREATE_COMPLETE --no-paginate --output text))
+            echo Stack names: "${STACKS[@]}"
+            if [[ "${STACKS[@]}" =~ "${oldWorkFlowId}"  ]]
+            then
+              aws s3 rm "s3://udapeople-${oldWorkFlowId}" --recursive
+              aws cloudformation delete-stack --stack-name "udapeople-backend-${oldWorkFlowId}"
+              aws cloudformation delete-stack --stack-name "udapeople-frontend-${oldWorkFlowId}"
+            else
+              echo could not delete anything
+            fi
 workflows:
   default:
     jobs:
@@ -443,3 +473,5 @@ workflows:
           requires: [deploy-backend, deploy-frontend]
       - cloudfront-update:
           requires: [smoke-test]
+      - cleanup:
+          requires: [cloudfront-update]
