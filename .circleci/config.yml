@@ -126,16 +126,15 @@ jobs:
             npm install
             npm i
             # npm install oauth-sign@^0.9.0
-            npm audit fix --audit-level=critical 
-            npm audit fix --audit-level=critical
+            npm audit fix --audit-level=critical --force
+            npm audit fix --force
             npm audit --audit-level=critical
   deploy-infrastructure:
     docker:
       - image: amazon/aws-cli
     steps:
       - checkout
-      - run: apk add --update tar
-      - run: apk add --update gzip
+      - run: yum install -y tar gzip
       - run:
           name: Ensure back-end infrastructure exists
           command: |
@@ -153,7 +152,7 @@ jobs:
       - run:
           name: Add back-end ip to ansible inventory
           command: |
-           aws ec2 describe-instances -query 'Reservations[*].Instances[*].PublicIpAddress' --output text >> inventory.txt
+           aws ec2 describe-instances --query 'Reservations[*].Instances[*].PublicIpAddress' --output text >> inventory.txt
       - persist_to_workspace:
           root: ~/
           paths:
@@ -172,7 +171,7 @@ jobs:
       - run:
           name: Install dependencies
           command: |
-            apk add --update tar gzip ansible awscli
+            apk add --update tar gzip ansible
       - run:
           name: Configure server
           command: |
@@ -192,56 +191,42 @@ jobs:
           command: |
             cd backend
             npm install
-            npm audit fix
             npm run migrations > migrations_dump.txt
       - run:
           name: Send migration results to kvdb
           command: |
             if grep -q "has been executed successfully." ~/project/backend/migrations_dump.txt
             then
-            curl https://kvdb.io/Sj1ZGcheHT6dsgnb9VhaLX/migration_${CIRCLE_WORKFLOW_ID:0:7}  -d '1'
+              echo "insecure" >> ~/.curlrc
+              curl https://kvdb.io/Sj1ZGcheHT6dsgnb9VhaLX/migration_${CIRCLE_WORKFLOW_ID:0:7}  -d '1'
             fi
       # Here's where you will add some code to rollback on failure      
 
   deploy-frontend:
     docker:
-      - image:  amazon/aws-cli
+      - image: circleci/node:13.8.0
     steps:
       - checkout
-      - attach_workspace:
-          at: ~/
+      - restore_cache:
+          keys: [frontend-build]
       - run:
-          name: Install tar
+          name: Install tar,gzip
           command: |
-            yum install -y tar
+            sudo apt-get update -y
+            sudo apt-get install -y tar
       - run:
-          name: Install gzip
+          name: Install AWS CLI
           command: |
-            yum install -y gzip
-      - run:
-          name: Install python3
-          command: |
-            yum install -y python3
-      - run:
-          name: Install ansible
-          command: | 
-            yum install -y ansible
-      - run:
-          name: Install node
-          command: | 
-            yum install -y node
-      - run:
-          name: Install npm
-          command: | 
-            yum install -y npm
-      - run:
-          name: Install awscli
-          command: | 
-            yum install -y awscli
+            sudo apt-get update
+            sudo apt-get install
+            sudo apt install ca-certificates
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
       - run:
           name: Get backend url
           command: |
-            export BACKEND_IP=$(aws ec2 describe-instances --query 'Reservations[*].Instances[*].PublicIpAddress' --output text)
+            export BACKEND_IP=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=backend-${CIRCLE_WORKFLOW_ID:0:7}" --query 'Reservations[*].Instances[*].PublicIpAddress' --output text)
             export API_URL="http://${BACKEND_IP}:3030"
             echo "API_URL = ${API_URL}"
             echo API_URL="http://${BACKEND_IP}:3030" >> frontend/.env
@@ -249,7 +234,6 @@ jobs:
       - run:
           name: Deploy frontend objects
           command: |
-            npm run build
             cd frontend
             npm install
             npm run build
@@ -304,10 +288,7 @@ workflows:
       - scan-backend: 
           requires: [build-backend]
       - deploy-infrastructure:
-          requires: [test-frontend, test-backend, scan-frontend]
-          filters:
-            branches:
-              only: [test-feature-branch]
+          requires: [test-frontend, test-backend, scan-frontend, scan-backend]
       - configure-infrastructure:
           requires: [deploy-infrastructure]
       - run-migrations:
