@@ -204,43 +204,29 @@ jobs:
 
   deploy-frontend:
     docker:
-      - image:  amazon/aws-cli
+      - image: circleci/node:13.8.0
     steps:
       - checkout
-      - attach_workspace:
-          at: ~/
+      - restore_cache:
+          keys: [frontend-build]
       - run:
-          name: Install tar
+          name: Install tar,gzip
           command: |
-            yum install -y tar
+            sudo apt-get update -y
+            sudo apt-get install -y tar
       - run:
-          name: Install gzip
+          name: Install AWS CLI
           command: |
-            yum install -y gzip
-      - run:
-          name: Install python3
-          command: |
-            yum install -y python3
-      - run:
-          name: Install ansible
-          command: | 
-            yum install -y ansible
-      - run:
-          name: Install node
-          command: | 
-            yum install -y node
-      - run:
-          name: Install npm
-          command: | 
-            yum install -y npm
-      - run:
-          name: Install awscli
-          command: | 
-            yum install -y awscli
+            sudo apt-get update
+            sudo apt-get install
+            sudo apt install ca-certificates
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            sudo ./aws/install
       - run:
           name: Get backend url
           command: |
-            export BACKEND_IP=$(aws ec2 describe-instances --query 'Reservations[*].Instances[*].PublicIpAddress' --output text)
+            export BACKEND_IP=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=backend-${CIRCLE_WORKFLOW_ID:0:7}" --query 'Reservations[*].Instances[*].PublicIpAddress' --output text)
             export API_URL="http://${BACKEND_IP}:3030"
             echo "API_URL = ${API_URL}"
             echo API_URL="http://${BACKEND_IP}:3030" >> frontend/.env
@@ -248,7 +234,6 @@ jobs:
       - run:
           name: Deploy frontend objects
           command: |
-            npm run build
             cd frontend
             npm install
             npm run build
